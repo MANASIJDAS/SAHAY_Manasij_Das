@@ -14,6 +14,7 @@ from sklearn.model_selection import (
     StratifiedKFold,
     GridSearchCV
 )
+from sklearn.neighbors import KNeighborsClassifier
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import (
@@ -610,7 +611,59 @@ def train_model():
         y_train
     )
 
+    knn_pipeline = Pipeline(
+        [
+            (
+                "imputer",
+                SimpleImputer(
+                    strategy="median"
+                )
+            ),
+            (
+                "scaler",
+                StandardScaler()
+            ),
+            (
+                "classifier",
+                KNeighborsClassifier()
+            )
+        ]
+    )
+
+    knn_param_grid = {
+        "classifier__n_neighbors": [
+            3,
+            5,
+            7,
+            9,
+            11,
+            15
+        ],
+        "classifier__weights": [
+            "uniform",
+            "distance"
+        ],
+        "classifier__p": [
+            1,
+            2
+        ]
+    }
+
+    knn_grid = GridSearchCV(
+        knn_pipeline,
+        knn_param_grid,
+        cv=cv,
+        scoring="f1_macro",
+        n_jobs=1
+    )
+
+    knn_grid.fit(
+        X_train,
+        y_train
+    )
+
     logistic_model = logistic_grid.best_estimator_
+    knn_model = knn_grid.best_estimator_
 
     model = grid.best_estimator_
 
@@ -719,7 +772,9 @@ def train_model():
         distribution,
         grid.best_params_,
         logistic_model,
-        logistic_grid.best_params_
+        logistic_grid.best_params_,
+        knn_model,
+        knn_grid.best_params_
     )
 
 
@@ -753,7 +808,9 @@ try:
         distribution,
         best_params,
         logistic_model,
-        logistic_best_params
+        logistic_best_params,
+        knn_model,
+        knn_best_params
     ) = train_model()
 
 except Exception as e:
