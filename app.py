@@ -23,3 +23,11 @@ from sklearn.metrics import (
     f1_score,
     confusion_matrix
 )
+
+
+st.set_page_config(
+    page_title="SAHAY | Stress & Welfare Monitoring",
+    page_icon="🛡️",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
