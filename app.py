@@ -24,6 +24,7 @@ from sklearn.metrics import (
     f1_score,
     confusion_matrix
 )
+from sklearn.svm import SVC
 
 
 st.set_page_config(
@@ -504,7 +505,21 @@ def train_model():
         stratify=y
     )
 
-    pipeline = Pipeline(
+    cv = StratifiedKFold(
+        n_splits=5,
+        shuffle=True,
+        random_state=42
+    )
+
+    labels = [
+        "Normal",
+        "Mild",
+        "Moderate",
+        "Severe",
+        "Extremely Severe"
+    ]
+
+    random_forest_pipeline = Pipeline(
         [
             (
                 "imputer",
@@ -523,41 +538,14 @@ def train_model():
         ]
     )
 
-    param_grid = {
-        "classifier__n_estimators": [
-            100,
-            150
-        ],
-        "classifier__max_depth": [
-            None,
-            15
-        ],
-        "classifier__min_samples_split": [
-            2
-        ],
-        "classifier__min_samples_leaf": [
-            1
-        ]
+    random_forest_param_grid = {
+        "classifier__n_estimators": [100, 200, 300],
+        "classifier__max_depth": [None, 10, 15, 20],
+        "classifier__min_samples_split": [2, 5, 10],
+        "classifier__min_samples_leaf": [1, 2, 4],
+        "classifier__max_features": ["sqrt", "log2"],
+        "classifier__class_weight": ["balanced"]
     }
-
-    cv = StratifiedKFold(
-        n_splits=5,
-        shuffle=True,
-        random_state=42
-    )
-
-    grid = GridSearchCV(
-        pipeline,
-        param_grid,
-        cv=cv,
-        scoring="f1_macro",
-        n_jobs=1
-    )
-
-    grid.fit(
-        X_train,
-        y_train
-    )
 
     logistic_pipeline = Pipeline(
         [
@@ -575,7 +563,6 @@ def train_model():
                 "classifier",
                 LogisticRegression(
                     max_iter=2000,
-                    class_weight="balanced",
                     solver="lbfgs",
                     penalty="l2",
                     random_state=42
@@ -585,31 +572,12 @@ def train_model():
     )
 
     logistic_param_grid = {
-        "classifier__C": [
-            0.01,
-            0.1,
-            1,
-            10,
-            100
-        ],
-        "classifier__class_weight": [
-            None,
-            "balanced"
-        ]
+        "classifier__C": [0.01, 0.1, 1, 10, 100],
+        "classifier__solver": ["lbfgs"],
+        "classifier__max_iter": [1000, 2000],
+        "classifier__class_weight": [None, "balanced"],
+        "classifier__penalty": ["l2"]
     }
-
-    logistic_grid = GridSearchCV(
-        logistic_pipeline,
-        logistic_param_grid,
-        cv=cv,
-        scoring="f1_macro",
-        n_jobs=1
-    )
-
-    logistic_grid.fit(
-        X_train,
-        y_train
-    )
 
     knn_pipeline = Pipeline(
         [
@@ -631,121 +599,187 @@ def train_model():
     )
 
     knn_param_grid = {
-        "classifier__n_neighbors": [
-            3,
-            5,
-            7,
-            9,
-            11,
-            15
-        ],
-        "classifier__weights": [
-            "uniform",
-            "distance"
-        ],
-        "classifier__p": [
-            1,
-            2
-        ]
+        "classifier__n_neighbors": [3, 5, 7, 9, 11, 15],
+        "classifier__weights": ["uniform", "distance"],
+        "classifier__metric": ["minkowski"],
+        "classifier__p": [1, 2],
+        "classifier__algorithm": ["auto"]
     }
 
-    knn_grid = GridSearchCV(
-        knn_pipeline,
-        knn_param_grid,
-        cv=cv,
-        scoring="f1_macro",
-        n_jobs=1
-    )
-
-    knn_grid.fit(
-        X_train,
-        y_train
-    )
-
-    logistic_model = logistic_grid.best_estimator_
-    knn_model = knn_grid.best_estimator_
-
-    model = grid.best_estimator_
-
-    y_pred = model.predict(
-        X_test
-    )
-
-    accuracy = accuracy_score(
-        y_test,
-        y_pred
-    )
-
-    precision = precision_score(
-        y_test,
-        y_pred,
-        average="macro",
-        zero_division=0
-    )
-
-    recall = recall_score(
-        y_test,
-        y_pred,
-        average="macro",
-        zero_division=0
-    )
-
-    f1 = f1_score(
-        y_test,
-        y_pred,
-        average="macro",
-        zero_division=0
-    )
-
-    best_index = grid.best_index_
-
-    cv_scores = np.array(
+    svm_pipeline = Pipeline(
         [
-            grid.cv_results_[
-                f"split{i}_test_score"
-            ][best_index]
-            for i in range(
-                cv.n_splits
+            (
+                "imputer",
+                SimpleImputer(
+                    strategy="median"
+                )
+            ),
+            (
+                "scaler",
+                StandardScaler()
+            ),
+            (
+                "classifier",
+                SVC(
+                    probability=True,
+                    random_state=42,
+                    class_weight="balanced"
+                )
             )
         ]
     )
 
-    cm = confusion_matrix(
-        y_test,
-        y_pred,
-        labels=[
-            "Normal",
-            "Mild",
-            "Moderate",
-            "Severe",
-            "Extremely Severe"
-        ]
-    )
+    svm_param_grid = {
+        "classifier__C": [0.1, 1, 10, 100],
+        "classifier__kernel": ["linear", "rbf"],
+        "classifier__gamma": ["scale", "auto"],
+        "classifier__class_weight": [None, "balanced"]
+    }
 
-    importances = model.named_steps[
-        "classifier"
-    ].feature_importances_
+    model_specs = {
+        "Random Forest": (
+            random_forest_pipeline,
+            random_forest_param_grid
+        ),
+        "Logistic Regression": (
+            logistic_pipeline,
+            logistic_param_grid
+        ),
+        "KNN": (
+            knn_pipeline,
+            knn_param_grid
+        ),
+        "SVM": (
+            svm_pipeline,
+            svm_param_grid
+        )
+    }
 
-    importance_df = pd.DataFrame(
-        {
-            "Feature": X.columns,
-            "Importance": importances
+    results = {}
+
+    for model_name, (pipeline, param_grid) in model_specs.items():
+
+        grid = GridSearchCV(
+            pipeline,
+            param_grid,
+            cv=cv,
+            scoring="f1_macro",
+            n_jobs=1
+        )
+
+        grid.fit(
+            X_train,
+            y_train
+        )
+
+        best_estimator = grid.best_estimator_
+        y_pred = best_estimator.predict(X_test)
+
+        accuracy = accuracy_score(
+            y_test,
+            y_pred
+        )
+
+        precision = precision_score(
+            y_test,
+            y_pred,
+            average="macro",
+            zero_division=0
+        )
+
+        recall = recall_score(
+            y_test,
+            y_pred,
+            average="macro",
+            zero_division=0
+        )
+
+        f1 = f1_score(
+            y_test,
+            y_pred,
+            average="macro",
+            zero_division=0
+        )
+
+        weighted_f1 = f1_score(
+            y_test,
+            y_pred,
+            average="weighted",
+            zero_division=0
+        )
+
+        cm = confusion_matrix(
+            y_test,
+            y_pred,
+            labels=labels
+        )
+
+        classifier = best_estimator.named_steps["classifier"]
+
+        if hasattr(classifier, "feature_importances_"):
+            importance_values = classifier.feature_importances_
+        elif hasattr(classifier, "coef_"):
+            importance_values = np.abs(classifier.coef_).mean(axis=0)
+        else:
+            importance_values = np.zeros(
+                len(X.columns)
+            )
+
+        importance_df = pd.DataFrame(
+            {
+                "Feature": X.columns,
+                "Importance": importance_values
+            }
+        ).sort_values(
+            "Importance",
+            ascending=True
+        )
+
+        cv_scores = np.array(
+            [
+                grid.cv_results_[f"split{i}_test_score"][grid.best_index_]
+                for i in range(cv.n_splits)
+            ]
+        )
+
+        results[model_name] = {
+            "name": model_name,
+            "estimator": best_estimator,
+            "best_params": grid.best_params_,
+            "best_score": grid.best_score_,
+            "cv_scores": cv_scores,
+            "accuracy": accuracy,
+            "precision": precision,
+            "recall": recall,
+            "f1": f1,
+            "weighted_f1": weighted_f1,
+            "confusion_matrix": cm,
+            "importance_df": importance_df,
+            "y_pred": y_pred,
+            "n_classes": len(labels)
         }
-    ).sort_values(
-        "Importance",
-        ascending=True
+
+    best_model_name, best_result = max(
+        results.items(),
+        key=lambda item: item[1]["best_score"]
     )
+
+    model = best_result["estimator"]
+    y_pred = best_result["y_pred"]
+    accuracy = best_result["accuracy"]
+    precision = best_result["precision"]
+    recall = best_result["recall"]
+    f1 = best_result["f1"]
+    weighted_f1 = best_result["weighted_f1"]
+    cv_scores = best_result["cv_scores"]
+    cm = best_result["confusion_matrix"]
+    importance_df = best_result["importance_df"]
+    best_params = best_result["best_params"]
 
     distribution = (
         y.value_counts()
         .reindex(
-            [
-                "Normal",
-                "Mild",
-                "Moderate",
-                "Severe",
-                "Extremely Severe"
-            ],
+            labels,
             fill_value=0
         )
         .reset_index()
@@ -755,6 +789,15 @@ def train_model():
         "Stress Level",
         "Count"
     ]
+
+    rf_model = results["Random Forest"]["estimator"]
+    rf_best_params = results["Random Forest"]["best_params"]
+    logistic_model = results["Logistic Regression"]["estimator"]
+    logistic_best_params = results["Logistic Regression"]["best_params"]
+    knn_model = results["KNN"]["estimator"]
+    knn_best_params = results["KNN"]["best_params"]
+    svm_model = results["SVM"]["estimator"]
+    svm_best_params = results["SVM"]["best_params"]
 
     return (
         model,
@@ -766,15 +809,21 @@ def train_model():
         precision,
         recall,
         f1,
+        weighted_f1,
         cv_scores,
         cm,
         importance_df,
         distribution,
-        grid.best_params_,
+        best_params,
         logistic_model,
-        logistic_grid.best_params_,
+        logistic_best_params,
         knn_model,
-        knn_grid.best_params_
+        knn_best_params,
+        svm_model,
+        svm_best_params,
+        best_model_name,
+        rf_model,
+        rf_best_params
     )
 
 
@@ -802,6 +851,7 @@ try:
         precision,
         recall,
         f1,
+        weighted_f1,
         cv_scores,
         cm,
         importance_df,
@@ -810,7 +860,12 @@ try:
         logistic_model,
         logistic_best_params,
         knn_model,
-        knn_best_params
+        knn_best_params,
+        svm_model,
+        svm_best_params,
+        best_model_name,
+        rf_model,
+        rf_best_params
     ) = train_model()
 
 except Exception as e:
@@ -847,7 +902,7 @@ st.markdown(
 
     <p>
     DASS-42 based stress screening and welfare-support prototype
-    powered by Random Forest.
+    powered by the best-performing trained model.
     </p>
 
     </div>
@@ -1362,14 +1417,16 @@ st.markdown(
     "## Model Performance"
 )
 
-
 st.caption(
     "Performance metrics are calculated on the held-out test set. "
-    "Five-fold cross-validation is used during model evaluation."
+    "Five-fold cross-validation is used during model selection."
 )
 
+st.caption(
+    f"Best model selected by 5-fold cross-validation macro F1: {best_model_name}"
+)
 
-m1, m2, m3, m4 = st.columns(4)
+m1, m2, m3, m4, m5 = st.columns(5)
 
 
 with m1:
@@ -1452,6 +1509,26 @@ with m4:
     )
 
 
+with m5:
+
+    st.markdown(
+        f"""
+        <div class="metric-card">
+
+        <div class="metric-title">
+        Weighted F1
+        </div>
+
+        <div class="metric-value">
+        {weighted_f1 * 100:.2f}%
+        </div>
+
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+
 st.markdown("")
 
 
@@ -1461,13 +1538,15 @@ perf_df = pd.DataFrame(
             "Accuracy",
             "Macro Precision",
             "Macro Recall",
-            "Macro F1"
+            "Macro F1",
+            "Weighted F1"
         ],
         "Score": [
             accuracy * 100,
             precision * 100,
             recall * 100,
-            f1 * 100
+            f1 * 100,
+            weighted_f1 * 100
         ]
     }
 )
@@ -1518,27 +1597,17 @@ with col1:
         "### Confusion Matrix"
     )
 
-    labels = [
-        "Normal",
-        "Mild",
-        "Moderate",
-        "Severe",
-        "Extremely Severe"
-    ]
-
     cm_df = pd.DataFrame(
         cm,
         index=labels,
         columns=labels
     )
 
-
     fig_cm = px.imshow(
         cm_df,
         text_auto=True,
         aspect="auto"
     )
-
 
     fig_cm.update_layout(
         xaxis_title="Predicted",
@@ -1547,11 +1616,9 @@ with col1:
         paper_bgcolor="#fffdf4"
     )
 
-
     apply_black_plotly_text(
         fig_cm
     )
-
 
     st.plotly_chart(
         fig_cm,
@@ -1565,14 +1632,12 @@ with col2:
         "### Feature Importance"
     )
 
-
     fig_imp = px.bar(
         importance_df,
         x="Importance",
         y="Feature",
         orientation="h"
     )
-
 
     fig_imp.update_layout(
         xaxis_title="Importance",
@@ -1581,11 +1646,9 @@ with col2:
         paper_bgcolor="#fffdf4"
     )
 
-
     apply_black_plotly_text(
         fig_imp
     )
-
 
     st.plotly_chart(
         fig_imp,
