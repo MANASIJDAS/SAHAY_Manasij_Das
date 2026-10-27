@@ -11,7 +11,7 @@ import plotly.graph_objects as go
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LogisticRegression
-from sklearn.model_selection import train_test_split, StratifiedKFold
+from sklearn.model_selection import train_test_split, StratifiedKFold, cross_val_score
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
@@ -588,6 +588,32 @@ def train_model():
     }
 
 
+def compute_cv_macro_f1_scores(results, X, y):
+    cv = StratifiedKFold(n_splits=3, shuffle=True, random_state=42)
+    model_rows = []
+
+    for model_name in MODEL_DISPLAY_ORDER:
+        estimator = results[model_name]["estimator"]
+        fold_scores = cross_val_score(
+            estimator,
+            X,
+            y,
+            cv=cv,
+            scoring="f1_macro",
+        )
+        model_rows.append(
+            {
+                "Model": model_name,
+                "Fold 1 Macro F1": fold_scores[0],
+                "Fold 2 Macro F1": fold_scores[1],
+                "Fold 3 Macro F1": fold_scores[2],
+                "Mean Macro F1": fold_scores.mean(),
+            }
+        )
+
+    return pd.DataFrame(model_rows).round(4)
+
+
 loading_message = st.empty()
 loading_message.markdown(
     """
@@ -1042,11 +1068,8 @@ apply_black_plotly_text(fig_dist)
 st.plotly_chart(fig_dist, use_container_width=True)
 
 st.markdown("### Cross-Validation")
-st.info(
-    "The saved model bundle contains the trained estimators and held-out test "
-    "metrics, but it does not contain the original three-fold cross-validation "
-    "scores. Cross-validation results are therefore not displayed here."
-)
+cv_scores_df = compute_cv_macro_f1_scores(results, X, y)
+st.dataframe(cv_scores_df, use_container_width=True)
 
 st.markdown("### Dataset Information")
 d1, d2, d3 = st.columns(3)
