@@ -1,0 +1,476 @@
+{
+    "project": "SAHAY",
+    "random_state": 42,
+    "training_records": 31820,
+    "testing_records": 7955,
+    "feature_names": [
+        "Lack of Positive Feelings",
+        "Lack of Motivation & Drive",
+        "Hopelessness & Meaninglessness",
+        "Low Mood & Self-Worth",
+        "Lack of Interest & Enjoyment",
+        "Physical Anxiety Symptoms",
+        "Breathing & Heart Anxiety Symptoms",
+        "Fear & Panic Symptoms",
+        "Situational Anxiety Symptoms",
+        "Nervousness & Tension",
+        "Irritability & Agitation",
+        "Difficulty Relaxing",
+        "Stress Intolerance",
+        "Emotional Reactivity"
+    ],
+    "feature_groups": {
+        "Lack of Positive Feelings": [
+            "Q3A",
+            "Q5A",
+            "Q16A"
+        ],
+        "Lack of Motivation & Drive": [
+            "Q10A",
+            "Q17A",
+            "Q31A"
+        ],
+        "Hopelessness & Meaninglessness": [
+            "Q21A",
+            "Q37A",
+            "Q38A"
+        ],
+        "Low Mood & Self-Worth": [
+            "Q13A",
+            "Q26A",
+            "Q34A"
+        ],
+        "Lack of Interest & Enjoyment": [
+            "Q24A",
+            "Q42A",
+            "Q29A"
+        ],
+        "Physical Anxiety Symptoms": [
+            "Q2A",
+            "Q7A",
+            "Q23A"
+        ],
+        "Breathing & Heart Anxiety Symptoms": [
+            "Q4A",
+            "Q25A",
+            "Q41A"
+        ],
+        "Fear & Panic Symptoms": [
+            "Q9A",
+            "Q20A",
+            "Q28A"
+        ],
+        "Situational Anxiety Symptoms": [
+            "Q15A",
+            "Q30A",
+            "Q36A"
+        ],
+        "Nervousness & Tension": [
+            "Q6A",
+            "Q18A",
+            "Q39A"
+        ],
+        "Irritability & Agitation": [
+            "Q8A",
+            "Q11A",
+            "Q27A"
+        ],
+        "Difficulty Relaxing": [
+            "Q12A",
+            "Q22A",
+            "Q32A"
+        ],
+        "Stress Intolerance": [
+            "Q14A",
+            "Q33A",
+            "Q35A"
+        ],
+        "Emotional Reactivity": [
+            "Q1A",
+            "Q19A",
+            "Q40A"
+        ]
+    },
+    "stress_items": [
+        "Q1A",
+        "Q6A",
+        "Q8A",
+        "Q11A",
+        "Q12A",
+        "Q14A",
+        "Q18A",
+        "Q22A",
+        "Q27A",
+        "Q29A",
+        "Q32A",
+        "Q33A",
+        "Q35A",
+        "Q39A"
+    ],
+    "stress_levels": [
+        "Normal",
+        "Mild",
+        "Moderate",
+        "Severe",
+        "Extremely Severe"
+    ],
+    "models": {
+        "Random Forest": {
+            "accuracy": 0.8838466373350095,
+            "macro_precision": 0.771201175278798,
+            "macro_recall": 0.8121306891530834,
+            "macro_f1": 0.7848034843509233,
+            "weighted_f1": 0.8904549873241894,
+            "confusion_matrix": [
+                [
+                    771,
+                    114,
+                    3,
+                    0,
+                    0
+                ],
+                [
+                    28,
+                    258,
+                    74,
+                    3,
+                    0
+                ],
+                [
+                    4,
+                    97,
+                    439,
+                    106,
+                    0
+                ],
+                [
+                    1,
+                    2,
+                    90,
+                    833,
+                    25
+                ],
+                [
+                    0,
+                    0,
+                    2,
+                    375,
+                    4730
+                ]
+            ],
+            "classification_report": {
+                "Normal": {
+                    "precision": 0.9589552238805971,
+                    "recall": 0.8682432432432432,
+                    "f1-score": 0.9113475177304965,
+                    "support": 888.0
+                },
+                "Mild": {
+                    "precision": 0.5477707006369427,
+                    "recall": 0.7107438016528925,
+                    "f1-score": 0.6187050359712231,
+                    "support": 363.0
+                },
+                "Moderate": {
+                    "precision": 0.7220394736842105,
+                    "recall": 0.6795665634674922,
+                    "f1-score": 0.7001594896331739,
+                    "support": 646.0
+                },
+                "Severe": {
+                    "precision": 0.6324981017463933,
+                    "recall": 0.8759200841219769,
+                    "f1-score": 0.7345679012345679,
+                    "support": 951.0
+                },
+                "Extremely Severe": {
+                    "precision": 0.9947423764458465,
+                    "recall": 0.9261797532798121,
+                    "f1-score": 0.9592374771851552,
+                    "support": 5107.0
+                },
+                "accuracy": 0.8838466373350095,
+                "macro avg": {
+                    "precision": 0.771201175278798,
+                    "recall": 0.8121306891530834,
+                    "f1-score": 0.7848034843509233,
+                    "support": 7955.0
+                },
+                "weighted avg": {
+                    "precision": 0.9049007560536692,
+                    "recall": 0.8838466373350095,
+                    "f1-score": 0.8904549873241894,
+                    "support": 7955.0
+                }
+            }
+        },
+        "Logistic Regression": {
+            "accuracy": 0.9148962916404777,
+            "macro_precision": 0.8186891187950515,
+            "macro_recall": 0.8579958437154996,
+            "macro_f1": 0.834007638728394,
+            "weighted_f1": 0.9184799786560559,
+            "confusion_matrix": [
+                [
+                    800,
+                    88,
+                    0,
+                    0,
+                    0
+                ],
+                [
+                    26,
+                    292,
+                    45,
+                    0,
+                    0
+                ],
+                [
+                    0,
+                    95,
+                    486,
+                    65,
+                    0
+                ],
+                [
+                    0,
+                    0,
+                    88,
+                    837,
+                    26
+                ],
+                [
+                    0,
+                    0,
+                    0,
+                    244,
+                    4863
+                ]
+            ],
+            "classification_report": {
+                "Normal": {
+                    "precision": 0.9685230024213075,
+                    "recall": 0.9009009009009009,
+                    "f1-score": 0.9334889148191365,
+                    "support": 888.0
+                },
+                "Mild": {
+                    "precision": 0.6147368421052631,
+                    "recall": 0.8044077134986226,
+                    "f1-score": 0.6968973747016707,
+                    "support": 363.0
+                },
+                "Moderate": {
+                    "precision": 0.7851373182552503,
+                    "recall": 0.7523219814241486,
+                    "f1-score": 0.7683794466403162,
+                    "support": 646.0
+                },
+                "Severe": {
+                    "precision": 0.7303664921465969,
+                    "recall": 0.8801261829652997,
+                    "f1-score": 0.7982832618025751,
+                    "support": 951.0
+                },
+                "Extremely Severe": {
+                    "precision": 0.9946819390468399,
+                    "recall": 0.9522224397885255,
+                    "f1-score": 0.9729891956782714,
+                    "support": 5107.0
+                },
+                "accuracy": 0.9148962916404777,
+                "macro avg": {
+                    "precision": 0.8186891187950515,
+                    "recall": 0.8579958437154994,
+                    "f1-score": 0.834007638728394,
+                    "support": 7955.0
+                },
+                "weighted avg": {
+                    "precision": 0.9258096548297735,
+                    "recall": 0.9148962916404777,
+                    "f1-score": 0.9184799786560559,
+                    "support": 7955.0
+                }
+            }
+        },
+        "KNN": {
+            "accuracy": 0.871904462602137,
+            "macro_precision": 0.7300027789132557,
+            "macro_recall": 0.7179816857960495,
+            "macro_f1": 0.7237800989306604,
+            "weighted_f1": 0.8709372634337845,
+            "confusion_matrix": [
+                [
+                    775,
+                    85,
+                    25,
+                    3,
+                    0
+                ],
+                [
+                    62,
+                    174,
+                    116,
+                    10,
+                    1
+                ],
+                [
+                    6,
+                    96,
+                    395,
+                    138,
+                    11
+                ],
+                [
+                    0,
+                    6,
+                    114,
+                    621,
+                    210
+                ],
+                [
+                    0,
+                    0,
+                    1,
+                    135,
+                    4971
+                ]
+            ],
+            "classification_report": {
+                "Normal": {
+                    "precision": 0.9193357058125742,
+                    "recall": 0.8727477477477478,
+                    "f1-score": 0.8954361640670133,
+                    "support": 888.0
+                },
+                "Mild": {
+                    "precision": 0.481994459833795,
+                    "recall": 0.4793388429752066,
+                    "f1-score": 0.48066298342541436,
+                    "support": 363.0
+                },
+                "Moderate": {
+                    "precision": 0.6067588325652842,
+                    "recall": 0.6114551083591331,
+                    "f1-score": 0.6090979182729376,
+                    "support": 646.0
+                },
+                "Severe": {
+                    "precision": 0.6846747519294377,
+                    "recall": 0.6529968454258676,
+                    "f1-score": 0.6684607104413348,
+                    "support": 951.0
+                },
+                "Extremely Severe": {
+                    "precision": 0.9572501444251877,
+                    "recall": 0.9733698844722929,
+                    "f1-score": 0.9652427184466019,
+                    "support": 5107.0
+                },
+                "accuracy": 0.871904462602137,
+                "macro avg": {
+                    "precision": 0.7300027789132558,
+                    "recall": 0.7179816857960496,
+                    "f1-score": 0.7237800989306603,
+                    "support": 7955.0
+                },
+                "weighted avg": {
+                    "precision": 0.8702831525056866,
+                    "recall": 0.871904462602137,
+                    "f1-score": 0.8709372634337845,
+                    "support": 7955.0
+                }
+            }
+        },
+        "SVM": {
+            "accuracy": 0.9152734129478316,
+            "macro_precision": 0.8193763553354068,
+            "macro_recall": 0.8584112072624592,
+            "macro_f1": 0.8347746600428237,
+            "weighted_f1": 0.9187983641647233,
+            "confusion_matrix": [
+                [
+                    800,
+                    88,
+                    0,
+                    0,
+                    0
+                ],
+                [
+                    26,
+                    292,
+                    45,
+                    0,
+                    0
+                ],
+                [
+                    0,
+                    92,
+                    489,
+                    65,
+                    0
+                ],
+                [
+                    0,
+                    0,
+                    90,
+                    834,
+                    27
+                ],
+                [
+                    0,
+                    0,
+                    0,
+                    241,
+                    4866
+                ]
+            ],
+            "classification_report": {
+                "Normal": {
+                    "precision": 0.9685230024213075,
+                    "recall": 0.9009009009009009,
+                    "f1-score": 0.9334889148191365,
+                    "support": 888.0
+                },
+                "Mild": {
+                    "precision": 0.6186440677966102,
+                    "recall": 0.8044077134986226,
+                    "f1-score": 0.6994011976047905,
+                    "support": 363.0
+                },
+                "Moderate": {
+                    "precision": 0.7836538461538461,
+                    "recall": 0.7569659442724458,
+                    "f1-score": 0.7700787401574803,
+                    "support": 646.0
+                },
+                "Severe": {
+                    "precision": 0.7315789473684211,
+                    "recall": 0.8769716088328076,
+                    "f1-score": 0.7977044476327116,
+                    "support": 951.0
+                },
+                "Extremely Severe": {
+                    "precision": 0.9944819129368485,
+                    "recall": 0.9528098688075191,
+                    "f1-score": 0.9732,
+                    "support": 5107.0
+                },
+                "accuracy": 0.9152734129478316,
+                "macro avg": {
+                    "precision": 0.8193763553354068,
+                    "recall": 0.8584112072624592,
+                    "f1-score": 0.8347746600428237,
+                    "support": 7955.0
+                },
+                "weighted avg": {
+                    "precision": 0.9258840120291048,
+                    "recall": 0.9152734129478316,
+                    "f1-score": 0.9187983641647232,
+                    "support": 7955.0
+                }
+            }
+        }
+    },
+    "best_model_name_by_macro_f1": "SVM"
+}
