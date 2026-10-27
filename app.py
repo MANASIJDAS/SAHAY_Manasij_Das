@@ -331,6 +331,60 @@ METRICS_PATH = os.path.join(
 )
 
 
+def load_saved_metrics():
+    if not os.path.exists(METRICS_PATH):
+        raise FileNotFoundError(
+            "The metrics JSON file was not found: " + METRICS_PATH
+        )
+
+    try:
+        with open(METRICS_PATH, "r", encoding="utf-8") as fp:
+            metrics = json.load(fp)
+    except json.JSONDecodeError as exc:
+        raise ValueError(
+            "The saved metrics file is not valid JSON: " + METRICS_PATH
+        ) from exc
+
+    required_top_level = {
+        "project",
+        "training_records",
+        "testing_records",
+        "feature_names",
+        "feature_groups",
+        "stress_items",
+        "stress_levels",
+        "models",
+    }
+    missing_keys = sorted(required_top_level.difference(metrics.keys()))
+    if missing_keys:
+        raise ValueError(
+            "The metrics file is missing required keys: " + ", ".join(missing_keys)
+        )
+
+    if metrics["feature_names"] != list(FEATURE_GROUPS.keys()):
+        raise ValueError(
+            "The feature names in sahay_model_metrics.json do not match the app configuration."
+        )
+    if metrics["feature_groups"] != FEATURE_GROUPS:
+        raise ValueError(
+            "The feature-group mappings in sahay_model_metrics.json do not match the app configuration."
+        )
+    if metrics["stress_items"] != STRESS_ITEMS:
+        raise ValueError(
+            "The stress-item list in sahay_model_metrics.json does not match the app configuration."
+        )
+
+    expected_models = ["Random Forest", "Logistic Regression", "KNN", "SVM"]
+    missing_models = [name for name in expected_models if name not in metrics["models"]]
+    if missing_models:
+        raise ValueError(
+            "The metrics file is missing model entries for: "
+            + ", ".join(missing_models)
+        )
+
+    return metrics
+
+
 @st.cache_resource
 def train_model():
     """Load the already-trained models and evaluate them on the held-out split."""
@@ -344,9 +398,14 @@ def train_model():
         )
 
     bundle = joblib.load(MODEL_PATH)
+    saved_metrics = load_saved_metrics()
 
     required_bundle_keys = {
-        "models", "feature_names", "feature_groups", "stress_items", "stress_levels"
+        "models",
+        "feature_names",
+        "feature_groups",
+        "stress_items",
+        "stress_levels",
     }
     missing_keys = required_bundle_keys.difference(bundle.keys())
     if missing_keys:
@@ -355,7 +414,6 @@ def train_model():
             + ", ".join(sorted(missing_keys))
         )
 
-    # Stop rather than silently using a model trained on different inputs.
     if bundle["feature_names"] != list(FEATURE_GROUPS.keys()):
         raise ValueError(
             "Feature names/order in sahay_models.joblib do not match app.py."
@@ -379,7 +437,6 @@ def train_model():
     if missing_columns:
         raise ValueError("Missing DASS columns: " + ", ".join(missing_columns))
 
-    # Keep the same 1–4 to 0–3 conversion and feature means as the original app.py.
     dass_scores = data[required_items].apply(pd.to_numeric, errors="coerce") - 1
 
     X = pd.DataFrame(index=data.index)
@@ -429,7 +486,6 @@ def train_model():
     labels = ["Normal", "Mild", "Moderate", "Severe", "Extremely Severe"]
     results = {}
 
-    # Evaluate saved models; do not retrain them when the Streamlit app starts.
     for model_name in expected_models:
         estimator = models[model_name]
         predictions = estimator.predict(X_test)
@@ -471,7 +527,6 @@ def train_model():
             "y_pred": predictions,
         }
 
-    # Random Forest remains the primary model, as specified for this project.
     best_model_name = "Random Forest"
     best_result = results[best_model_name]
     model = best_result["estimator"]
@@ -479,7 +534,12 @@ def train_model():
     distribution = y.value_counts().reindex(labels, fill_value=0).reset_index()
     distribution.columns = ["Stress Level", "Count"]
 
-    # CV fold scores were not saved in the supplied bundle. Do not fabricate them.
+    best_metric_model = saved_metrics.get("best_model_name_by_macro_f1")
+    if best_metric_model and best_metric_model not in results:
+        raise ValueError(
+            "The saved metrics file names a best model that is not present in the loaded model bundle."
+        )
+
     cv_scores = np.array([], dtype=float)
 
     return (
@@ -499,6 +559,8 @@ def train_model():
         distribution,
         best_result["best_params"],
         best_model_name,
+        saved_metrics,
+        best_metric_model,
         results["Logistic Regression"]["estimator"],
         results["Logistic Regression"]["best_params"],
         results["KNN"]["estimator"],
@@ -538,6 +600,8 @@ try:
         distribution,
         best_params,
         best_model_name,
+        saved_metrics,
+        metrics_best_model,
         logistic_model,
         logistic_best_params,
         knn_model,
@@ -809,11 +873,15 @@ if st.button("🔍 Assess Stress Risk", use_container_width=True, type="primary"
 
 st.markdown("---")
 st.markdown("## Model Performance")
-st.caption(
-    "Performance metrics are calculated on the held-out test set. "
-    "Three-fold cross-validation is used during model selection."
-)
-st.caption(f"Best model selected by macro F1 on the held-out test set: {best_model_name}")
+st.caption("Performance metrics are calculated on the held-out test set.")
+
+if metrics_best_model:
+    st.caption(
+        f"Primary application model: {best_model_name}. "
+        f"Best macro-F1 model recorded in the saved metrics JSON: {metrics_best_model}."
+    )
+else:
+    st.caption(f"Primary application model: {best_model_name}")
 
 m1, m2, m3, m4, m5 = st.columns(5)
 
