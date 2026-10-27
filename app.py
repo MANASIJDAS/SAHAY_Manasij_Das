@@ -33,6 +33,17 @@ st.set_page_config(
 )
 
 
+STRESS_LEVELS = [
+    "Normal",
+    "Mild",
+    "Moderate",
+    "Severe",
+    "Extremely Severe",
+]
+EXPECTED_MODEL_NAMES = ["Random Forest", "Logistic Regression", "KNN", "SVM"]
+MODEL_DISPLAY_ORDER = ["Random Forest", "SVM", "Logistic Regression", "KNN"]
+
+
 st.markdown(
     """
     <style>
@@ -228,6 +239,30 @@ def get_model_probabilities(model, input_df):
     return {cls: uniform for cls in model.classes_}
 
 
+def calculate_model_metrics(y_true, y_pred):
+    return {
+        "accuracy": accuracy_score(y_true, y_pred),
+        "precision": precision_score(
+            y_true,
+            y_pred,
+            average="macro",
+            zero_division=0,
+        ),
+        "recall": recall_score(
+            y_true,
+            y_pred,
+            average="macro",
+            zero_division=0,
+        ),
+        "f1": f1_score(
+            y_true,
+            y_pred,
+            average="macro",
+            zero_division=0,
+        ),
+    }
+
+
 FEATURE_GROUPS = {
     "Lack of Positive Feelings": ["Q3A", "Q5A", "Q16A"],
     "Lack of Motivation & Drive": ["Q10A", "Q17A", "Q31A"],
@@ -374,8 +409,7 @@ def load_saved_metrics():
             "The stress-item list in sahay_model_metrics.json does not match the app configuration."
         )
 
-    expected_models = ["Random Forest", "Logistic Regression", "KNN", "SVM"]
-    missing_models = [name for name in expected_models if name not in metrics["models"]]
+    missing_models = [name for name in EXPECTED_MODEL_NAMES if name not in metrics["models"]]
     if missing_models:
         raise ValueError(
             "The metrics file is missing model entries for: "
@@ -476,20 +510,17 @@ def train_model():
     )
 
     models = bundle["models"]
-    expected_models = ["Random Forest", "Logistic Regression", "KNN", "SVM"]
-    missing_models = [name for name in expected_models if name not in models]
+    missing_models = [name for name in EXPECTED_MODEL_NAMES if name not in models]
     if missing_models:
         raise ValueError(
             "The model bundle is missing: " + ", ".join(missing_models)
         )
 
-    labels = ["Normal", "Mild", "Moderate", "Severe", "Extremely Severe"]
     results = {}
-
-    for model_name in expected_models:
+    for model_name in MODEL_DISPLAY_ORDER:
         estimator = models[model_name]
         predictions = estimator.predict(X_test)
-        classifier = estimator.named_steps.get("classifier")
+        classifier = estimator.named_steps.get("classifier", estimator)
 
         if hasattr(classifier, "feature_importances_"):
             importance_values = classifier.feature_importances_
@@ -504,72 +535,57 @@ def train_model():
             "Importance": importance_values,
         }).sort_values("Importance", ascending=True)
 
+        metrics = calculate_model_metrics(y_test, predictions)
         results[model_name] = {
             "estimator": estimator,
-            "best_params": estimator.get_params(),
-            "accuracy": accuracy_score(y_test, predictions),
-            "precision": precision_score(
-                y_test, predictions, average="macro", zero_division=0
-            ),
-            "recall": recall_score(
-                y_test, predictions, average="macro", zero_division=0
-            ),
-            "f1": f1_score(
-                y_test, predictions, average="macro", zero_division=0
-            ),
+            "metrics": metrics,
+            "accuracy": metrics["accuracy"],
+            "precision": metrics["precision"],
+            "recall": metrics["recall"],
+            "f1": metrics["f1"],
             "weighted_f1": f1_score(
-                y_test, predictions, average="weighted", zero_division=0
+                y_test,
+                predictions,
+                average="weighted",
+                zero_division=0,
             ),
             "confusion_matrix": confusion_matrix(
-                y_test, predictions, labels=labels
+                y_test,
+                predictions,
+                labels=STRESS_LEVELS,
             ),
             "importance_df": importance_df_model,
             "y_pred": predictions,
         }
 
-    best_model_name = "Random Forest"
+    best_model_name = max(
+        results,
+        key=lambda model_name: results[model_name]["f1"],
+    )
     best_result = results[best_model_name]
     model = best_result["estimator"]
 
-    distribution = y.value_counts().reindex(labels, fill_value=0).reset_index()
+    saved_best_model = saved_metrics.get("best_model_name_by_macro_f1")
+    if saved_best_model and saved_best_model in results:
+        best_model_name = saved_best_model
+        model = results[best_model_name]["estimator"]
+
+    distribution = y.value_counts().reindex(STRESS_LEVELS, fill_value=0)
+    distribution = distribution.reset_index()
     distribution.columns = ["Stress Level", "Count"]
 
-    best_metric_model = saved_metrics.get("best_model_name_by_macro_f1")
-    if best_metric_model and best_metric_model not in results:
-        raise ValueError(
-            "The saved metrics file names a best model that is not present in the loaded model bundle."
-        )
-
-    cv_scores = np.array([], dtype=float)
-
-    return (
-        model,
-        X,
-        y,
-        X_test,
-        y_test,
-        best_result["accuracy"],
-        best_result["precision"],
-        best_result["recall"],
-        best_result["f1"],
-        best_result["weighted_f1"],
-        cv_scores,
-        best_result["confusion_matrix"],
-        best_result["importance_df"],
-        distribution,
-        best_result["best_params"],
-        best_model_name,
-        saved_metrics,
-        best_metric_model,
-        results["Logistic Regression"]["estimator"],
-        results["Logistic Regression"]["best_params"],
-        results["KNN"]["estimator"],
-        results["KNN"]["best_params"],
-        results["SVM"]["estimator"],
-        results["SVM"]["best_params"],
-        results["Random Forest"]["estimator"],
-        results["Random Forest"]["best_params"],
-    )
+    return {
+        "model": model,
+        "X": X,
+        "y": y,
+        "X_test": X_test,
+        "y_test": y_test,
+        "results": results,
+        "distribution": distribution,
+        "best_model_name": best_model_name,
+        "saved_metrics": saved_metrics,
+        "metrics_best_model": saved_metrics.get("best_model_name_by_macro_f1"),
+    }
 
 
 loading_message = st.empty()
@@ -583,40 +599,24 @@ loading_message.markdown(
 )
 
 try:
-    (
-        model,
-        X,
-        y,
-        X_test,
-        y_test,
-        accuracy,
-        precision,
-        recall,
-        f1,
-        weighted_f1,
-        cv_scores,
-        cm,
-        importance_df,
-        distribution,
-        best_params,
-        best_model_name,
-        saved_metrics,
-        metrics_best_model,
-        logistic_model,
-        logistic_best_params,
-        knn_model,
-        knn_best_params,
-        svm_model,
-        svm_best_params,
-        rf_model,
-        rf_best_params,
-    ) = train_model()
+    model_bundle = train_model()
 except Exception as e:
     loading_message.empty()
     st.error(str(e))
     st.stop()
 
 loading_message.empty()
+
+model = model_bundle["model"]
+X = model_bundle["X"]
+y = model_bundle["y"]
+X_test = model_bundle["X_test"]
+y_test = model_bundle["y_test"]
+results = model_bundle["results"]
+distribution = model_bundle["distribution"]
+best_model_name = model_bundle["best_model_name"]
+saved_metrics = model_bundle["saved_metrics"]
+metrics_best_model = model_bundle["metrics_best_model"]
 
 st.markdown(
     """
@@ -664,6 +664,14 @@ with st.sidebar:
         3 — Applied to me very much / most of the time
         """
     )
+    st.markdown("### Prediction Model")
+    selected_model_name = st.selectbox(
+        "Choose the model for individual prediction",
+        options=MODEL_DISPLAY_ORDER,
+        index=MODEL_DISPLAY_ORDER.index(best_model_name),
+        key="prediction_model_selector",
+    )
+    model = results[selected_model_name]["estimator"]
 
 st.markdown("## Wellbeing Assessment")
 st.markdown("Enter the individual's responses to the 14 grouped assessment dimensions.")
@@ -883,119 +891,137 @@ if metrics_best_model:
 else:
     st.caption(f"Primary application model: {best_model_name}")
 
-m1, m2, m3, m4, m5 = st.columns(5)
-
-with m1:
-    st.markdown(
-        f"""
-        <div class="metric-card">
-        <div class="metric-title">Accuracy</div>
-        <div class="metric-value">{accuracy * 100:.2f}%</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
+st.markdown("### All Four Model Metrics")
+for model_name in MODEL_DISPLAY_ORDER:
+    model_result = results[model_name]
+    model_metrics = model_result["metrics"]
+    st.markdown(f"#### {model_name}")
+    metrics_df = pd.DataFrame(
+        [
+            {
+                "Metric": "Accuracy",
+                "Score": model_metrics["accuracy"],
+            },
+            {
+                "Metric": "Macro Precision",
+                "Score": model_metrics["precision"],
+            },
+            {
+                "Metric": "Macro Recall",
+                "Score": model_metrics["recall"],
+            },
+            {
+                "Metric": "Macro F1-score",
+                "Score": model_metrics["f1"],
+            },
+        ]
+    )
+    st.dataframe(
+        metrics_df.assign(Score=lambda df: (df["Score"] * 100).round(2)).style.format({"Score": "{:.2f}%"}),
+        use_container_width=True,
     )
 
-with m2:
-    st.markdown(
-        f"""
-        <div class="metric-card">
-        <div class="metric-title">Macro Precision</div>
-        <div class="metric-value">{precision * 100:.2f}%</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
+    cm_df = pd.DataFrame(
+        model_result["confusion_matrix"],
+        index=STRESS_LEVELS,
+        columns=STRESS_LEVELS,
     )
-
-with m3:
-    st.markdown(
-        f"""
-        <div class="metric-card">
-        <div class="metric-title">Macro Recall</div>
-        <div class="metric-value">{recall * 100:.2f}%</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-with m4:
-    st.markdown(
-        f"""
-        <div class="metric-card">
-        <div class="metric-title">Macro F1</div>
-        <div class="metric-value">{f1 * 100:.2f}%</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-with m5:
-    st.markdown(
-        f"""
-        <div class="metric-card">
-        <div class="metric-title">Weighted F1</div>
-        <div class="metric-value">{weighted_f1 * 100:.2f}%</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-st.markdown("")
-perf_df = pd.DataFrame(
-    {
-        "Metric": [
-            "Accuracy",
-            "Macro Precision",
-            "Macro Recall",
-            "Macro F1",
-            "Weighted F1",
-        ],
-        "Score": [
-            accuracy * 100,
-            precision * 100,
-            recall * 100,
-            f1 * 100,
-            weighted_f1 * 100,
-        ],
-    }
-)
-fig_perf = px.bar(perf_df, x="Metric", y="Score", text="Score")
-fig_perf.update_traces(texttemplate="%{text:.2f}%", textposition="outside")
-fig_perf.update_layout(
-    yaxis_range=[0, 100],
-    yaxis_title="Score (%)",
-    plot_bgcolor="#fffdf4",
-    paper_bgcolor="#fffdf4",
-)
-apply_black_plotly_text(fig_perf)
-st.plotly_chart(fig_perf, use_container_width=True)
-
-col1, col2 = st.columns(2)
-
-with col1:
-    st.markdown("### Confusion Matrix")
-    cm_df = pd.DataFrame(cm, index=labels, columns=labels)
-    fig_cm = px.imshow(cm_df, text_auto=True, aspect="auto")
+    fig_cm = px.imshow(cm_df, text_auto=True, aspect="auto", color_continuous_scale="YlOrRd")
     fig_cm.update_layout(
-        xaxis_title="Predicted",
-        yaxis_title="Actual",
+        title=f"{model_name} Confusion Matrix",
+        xaxis_title="Predicted Class",
+        yaxis_title="Actual Class",
         plot_bgcolor="#fffdf4",
         paper_bgcolor="#fffdf4",
     )
     apply_black_plotly_text(fig_cm)
     st.plotly_chart(fig_cm, use_container_width=True)
+    st.markdown("---")
 
-with col2:
-    st.markdown("### Feature Importance")
-    fig_imp = px.bar(importance_df, x="Importance", y="Feature", orientation="h")
-    fig_imp.update_layout(
-        xaxis_title="Importance",
-        yaxis_title="",
-        plot_bgcolor="#fffdf4",
-        paper_bgcolor="#fffdf4",
-    )
-    apply_black_plotly_text(fig_imp)
-    st.plotly_chart(fig_imp, use_container_width=True)
+st.markdown("## Comparative Analysis of Machine Learning Models")
+comparison_df = pd.DataFrame(
+    [
+        {
+            "Model": model_name,
+            "Accuracy": results[model_name]["metrics"]["accuracy"],
+            "Macro Precision": results[model_name]["metrics"]["precision"],
+            "Macro Recall": results[model_name]["metrics"]["recall"],
+            "Macro F1-score": results[model_name]["metrics"]["f1"],
+        }
+        for model_name in MODEL_DISPLAY_ORDER
+    ]
+)
+
+st.dataframe(
+    comparison_df.assign(
+        Accuracy=lambda df: (df["Accuracy"] * 100).round(2),
+        **{
+            "Macro Precision": lambda df: (df["Macro Precision"] * 100).round(2),
+            "Macro Recall": lambda df: (df["Macro Recall"] * 100).round(2),
+            "Macro F1-score": lambda df: (df["Macro F1-score"] * 100).round(2),
+        },
+    ).style.format({
+        "Accuracy": "{:.2f}%",
+        "Macro Precision": "{:.2f}%",
+        "Macro Recall": "{:.2f}%",
+        "Macro F1-score": "{:.2f}%",
+    }),
+    use_container_width=True,
+)
+
+metric_df = comparison_df.melt(
+    id_vars="Model",
+    var_name="Metric",
+    value_name="Score",
+)
+fig_comparison = px.bar(
+    metric_df,
+    x="Metric",
+    y="Score",
+    color="Model",
+    barmode="group",
+    text="Score",
+)
+fig_comparison.update_traces(texttemplate="%{text:.2%}", textposition="outside")
+fig_comparison.update_layout(
+    yaxis_title="Score",
+    xaxis_title="Metric",
+    yaxis_range=[0, 1.0],
+    plot_bgcolor="#fffdf4",
+    paper_bgcolor="#fffdf4",
+    legend_title_text="Model",
+)
+apply_black_plotly_text(fig_comparison)
+st.plotly_chart(fig_comparison, use_container_width=True)
+
+best_by_metric = {
+    metric: comparison_df.loc[comparison_df[metric].idxmax(), "Model"]
+    for metric in ["Accuracy", "Macro Precision", "Macro Recall", "Macro F1-score"]
+}
+
+st.markdown("### Best Model by Metric")
+for metric, model_name in best_by_metric.items():
+    value = comparison_df.loc[comparison_df["Model"] == model_name, metric].iloc[0]
+    st.write(f"- {metric}: {model_name} ({value * 100:.2f}%)")
+
+best_model_summary = max(
+    comparison_df[["Model", "Macro F1-score"]].itertuples(index=False),
+    key=lambda row: row[1],
+)
+model_summary = (
+    f"The strongest overall test-set performance is {best_model_summary[0]} "
+    f"with macro F1 = {best_model_summary[1] * 100:.2f}%. "
+)
+if best_model_summary[0] == "SVM":
+    model_summary += "SVM is slightly ahead of Logistic Regression on the held-out dataset, while Random Forest and KNN remain competitive but lower in the macro-F1 comparison."
+elif best_model_summary[0] == "Logistic Regression":
+    model_summary += "Logistic Regression leads the held-out macro-F1 comparison, with SVM close behind and Random Forest and KNN trailing on this metric."
+elif best_model_summary[0] == "Random Forest":
+    model_summary += "Random Forest leads the held-out macro-F1 comparison, but it remains behind the better-balanced SVM and Logistic Regression performance on the full metric set."
+else:
+    model_summary += "KNN remains competitive on selected categories but trails the SVM and Logistic Regression models on macro recall and macro F1."
+
+st.info(model_summary)
 
 st.markdown("### Dataset Stress-Level Distribution")
 fig_dist = px.bar(distribution, x="Stress Level", y="Count", text="Count")
