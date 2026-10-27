@@ -1,5 +1,7 @@
 import os
 import zipfile
+import json
+import joblib
 import numpy as np
 import pandas as pd
 import streamlit as st
@@ -319,26 +321,75 @@ def load_dataset():
     return data
 
 
+MODEL_PATH = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)),
+    "sahay_models.joblib",
+)
+METRICS_PATH = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)),
+    "sahay_model_metrics.json",
+)
+
+
 @st.cache_resource
 def train_model():
+    """Load the already-trained models and evaluate them on the held-out split."""
     data = load_dataset()
 
-    required_items = []
-    for items in FEATURE_GROUPS.values():
-        required_items.extend(items)
-    required_items = list(dict.fromkeys(required_items))
+    if not os.path.exists(MODEL_PATH):
+        raise FileNotFoundError(
+            "The trained model file was not found: "
+            + MODEL_PATH
+            + ". Add sahay_models.joblib beside app.py."
+        )
 
-    missing = [item for item in required_items if item not in data.columns]
-    if missing:
-        raise ValueError("Missing DASS columns: " + ", ".join(missing))
+    bundle = joblib.load(MODEL_PATH)
 
+    required_bundle_keys = {
+        "models", "feature_names", "feature_groups", "stress_items", "stress_levels"
+    }
+    missing_keys = required_bundle_keys.difference(bundle.keys())
+    if missing_keys:
+        raise ValueError(
+            "The model bundle is missing required metadata: "
+            + ", ".join(sorted(missing_keys))
+        )
+
+    # Stop rather than silently using a model trained on different inputs.
+    if bundle["feature_names"] != list(FEATURE_GROUPS.keys()):
+        raise ValueError(
+            "Feature names/order in sahay_models.joblib do not match app.py."
+        )
+    if bundle["feature_groups"] != FEATURE_GROUPS:
+        raise ValueError(
+            "DASS question mappings in sahay_models.joblib do not match app.py."
+        )
+    if bundle["stress_items"] != STRESS_ITEMS:
+        raise ValueError(
+            "Stress-item definitions in sahay_models.joblib do not match app.py."
+        )
+
+    required_items = list(dict.fromkeys(
+        item
+        for items in FEATURE_GROUPS.values()
+        for item in items
+    ))
+    required_items = list(dict.fromkeys(required_items + STRESS_ITEMS))
+    missing_columns = [item for item in required_items if item not in data.columns]
+    if missing_columns:
+        raise ValueError("Missing DASS columns: " + ", ".join(missing_columns))
+
+    # Keep the same 1–4 to 0–3 conversion and feature means as the original app.py.
     dass_scores = data[required_items].apply(pd.to_numeric, errors="coerce") - 1
 
     X = pd.DataFrame(index=data.index)
     for feature_name, items in FEATURE_GROUPS.items():
         X[feature_name] = dass_scores[items].mean(axis=1)
+    X = X[list(FEATURE_GROUPS.keys())]
 
-    stress_sum = dass_scores[STRESS_ITEMS].sum(axis=1, min_count=len(STRESS_ITEMS))
+    stress_sum = dass_scores[STRESS_ITEMS].sum(
+        axis=1, min_count=len(STRESS_ITEMS)
+    )
     stress_score = stress_sum * 2
 
     def stress_level(score):
@@ -356,8 +407,8 @@ def train_model():
 
     y = stress_score.apply(stress_level)
     valid = X.notna().any(axis=1) & y.notna()
-    X = X.loc[valid]
-    y = y.loc[valid]
+    X = X.loc[valid].copy()
+    y = y.loc[valid].copy()
 
     X_train, X_test, y_train, y_test = train_test_split(
         X,
@@ -367,140 +418,69 @@ def train_model():
         stratify=y,
     )
 
-    cv = StratifiedKFold(n_splits=3, shuffle=True, random_state=42)
+    models = bundle["models"]
+    expected_models = ["Random Forest", "Logistic Regression", "KNN", "SVM"]
+    missing_models = [name for name in expected_models if name not in models]
+    if missing_models:
+        raise ValueError(
+            "The model bundle is missing: " + ", ".join(missing_models)
+        )
+
     labels = ["Normal", "Mild", "Moderate", "Severe", "Extremely Severe"]
-
-    model_specs = {
-        "Random Forest": Pipeline(
-            [
-                ("imputer", SimpleImputer(strategy="median")),
-                (
-                    "classifier",
-                    RandomForestClassifier(
-                        n_estimators=50,
-                        max_depth=10,
-                        min_samples_split=2,
-                        min_samples_leaf=1,
-                        class_weight="balanced",
-                        random_state=42,
-                        n_jobs=1,
-                    ),
-                ),
-            ]
-        ),
-        "Logistic Regression": Pipeline(
-            [
-                ("imputer", SimpleImputer(strategy="median")),
-                ("scaler", StandardScaler()),
-                (
-                    "classifier",
-                    LogisticRegression(
-                        C=1.0,
-                        solver="lbfgs",
-                        max_iter=200,
-                        class_weight="balanced",
-                        random_state=42,
-                    ),
-                ),
-            ]
-        ),
-        "KNN": Pipeline(
-            [
-                ("imputer", SimpleImputer(strategy="median")),
-                ("scaler", StandardScaler()),
-                (
-                    "classifier",
-                    KNeighborsClassifier(
-                        n_neighbors=5,
-                        weights="uniform",
-                        metric="minkowski",
-                        p=2,
-                        n_jobs=1,
-                    ),
-                ),
-            ]
-        ),
-        "SVM": Pipeline(
-            [
-                ("imputer", SimpleImputer(strategy="median")),
-                ("scaler", StandardScaler()),
-                (
-                    "classifier",
-                    SVC(
-                        C=1.0,
-                        kernel="linear",
-                        class_weight="balanced",
-                        probability=False,
-                        random_state=42,
-                    ),
-                ),
-            ]
-        ),
-    }
-
     results = {}
 
-    for model_name, pipeline in model_specs.items():
-        pipeline.fit(X_train, y_train)
-        y_pred = pipeline.predict(X_test)
+    # Evaluate saved models; do not retrain them when the Streamlit app starts.
+    for model_name in expected_models:
+        estimator = models[model_name]
+        predictions = estimator.predict(X_test)
+        classifier = estimator.named_steps.get("classifier")
 
-        accuracy = accuracy_score(y_test, y_pred)
-        precision = precision_score(y_test, y_pred, average="macro", zero_division=0)
-        recall = recall_score(y_test, y_pred, average="macro", zero_division=0)
-        f1_value = f1_score(y_test, y_pred, average="macro", zero_division=0)
-        weighted_f1 = f1_score(y_test, y_pred, average="weighted", zero_division=0)
-        cm = confusion_matrix(y_test, y_pred, labels=labels)
-
-        classifier = pipeline.named_steps["classifier"]
         if hasattr(classifier, "feature_importances_"):
             importance_values = classifier.feature_importances_
         elif hasattr(classifier, "coef_"):
-            importance_values = np.abs(classifier.coef_).mean(axis=0)
+            coef_values = np.asarray(classifier.coef_)
+            importance_values = np.abs(coef_values).mean(axis=0)
         else:
             importance_values = np.zeros(len(X.columns))
 
-        importance_df = pd.DataFrame(
-            {"Feature": X.columns, "Importance": importance_values}
-        ).sort_values("Importance", ascending=True)
-
-        cv_scores = []
-        for train_idx, valid_idx in cv.split(X_train, y_train):
-            fold_model = Pipeline(steps=list(pipeline.steps))
-            fold_model.fit(X_train.iloc[train_idx], y_train.iloc[train_idx])
-            valid_pred = fold_model.predict(X_train.iloc[valid_idx])
-            cv_scores.append(
-                f1_score(y_train.iloc[valid_idx], valid_pred, average="macro", zero_division=0)
-            )
+        importance_df_model = pd.DataFrame({
+            "Feature": X.columns,
+            "Importance": importance_values,
+        }).sort_values("Importance", ascending=True)
 
         results[model_name] = {
-            "estimator": pipeline,
-            "best_params": pipeline.get_params(),
-            "cv_scores": np.array(cv_scores),
-            "accuracy": accuracy,
-            "precision": precision,
-            "recall": recall,
-            "f1": f1_value,
-            "weighted_f1": weighted_f1,
-            "confusion_matrix": cm,
-            "importance_df": importance_df,
-            "y_pred": y_pred,
+            "estimator": estimator,
+            "best_params": estimator.get_params(),
+            "accuracy": accuracy_score(y_test, predictions),
+            "precision": precision_score(
+                y_test, predictions, average="macro", zero_division=0
+            ),
+            "recall": recall_score(
+                y_test, predictions, average="macro", zero_division=0
+            ),
+            "f1": f1_score(
+                y_test, predictions, average="macro", zero_division=0
+            ),
+            "weighted_f1": f1_score(
+                y_test, predictions, average="weighted", zero_division=0
+            ),
+            "confusion_matrix": confusion_matrix(
+                y_test, predictions, labels=labels
+            ),
+            "importance_df": importance_df_model,
+            "y_pred": predictions,
         }
 
-    best_model_name, best_result = max(results.items(), key=lambda item: item[1]["f1"])
-
+    # Random Forest remains the primary model, as specified for this project.
+    best_model_name = "Random Forest"
+    best_result = results[best_model_name]
     model = best_result["estimator"]
-    accuracy = best_result["accuracy"]
-    precision = best_result["precision"]
-    recall = best_result["recall"]
-    f1 = best_result["f1"]
-    weighted_f1 = best_result["weighted_f1"]
-    cv_scores = best_result["cv_scores"]
-    cm = best_result["confusion_matrix"]
-    importance_df = best_result["importance_df"]
-    best_params = best_result["best_params"]
 
     distribution = y.value_counts().reindex(labels, fill_value=0).reset_index()
     distribution.columns = ["Stress Level", "Count"]
+
+    # CV fold scores were not saved in the supplied bundle. Do not fabricate them.
+    cv_scores = np.array([], dtype=float)
 
     return (
         model,
@@ -508,16 +488,16 @@ def train_model():
         y,
         X_test,
         y_test,
-        accuracy,
-        precision,
-        recall,
-        f1,
-        weighted_f1,
+        best_result["accuracy"],
+        best_result["precision"],
+        best_result["recall"],
+        best_result["f1"],
+        best_result["weighted_f1"],
         cv_scores,
-        cm,
-        importance_df,
+        best_result["confusion_matrix"],
+        best_result["importance_df"],
         distribution,
-        best_params,
+        best_result["best_params"],
         best_model_name,
         results["Logistic Regression"]["estimator"],
         results["Logistic Regression"]["best_params"],
@@ -960,29 +940,12 @@ fig_dist.update_layout(
 apply_black_plotly_text(fig_dist)
 st.plotly_chart(fig_dist, use_container_width=True)
 
-st.markdown("### 3-Fold Cross-Validation")
-cv_col1, cv_col2 = st.columns(2)
-with cv_col1:
-    st.metric("Mean Macro F1", f"{cv_scores.mean() * 100:.2f}%")
-with cv_col2:
-    st.metric("Standard Deviation", f"{cv_scores.std() * 100:.2f}%")
-
-cv_df = pd.DataFrame(
-    {
-        "Fold": ["Fold 1", "Fold 2", "Fold 3"],
-        "Macro F1": cv_scores * 100,
-    }
+st.markdown("### Cross-Validation")
+st.info(
+    "The saved model bundle contains the trained estimators and held-out test "
+    "metrics, but it does not contain the original three-fold cross-validation "
+    "scores. Cross-validation results are therefore not displayed here."
 )
-fig_cv = px.bar(cv_df, x="Fold", y="Macro F1", text="Macro F1")
-fig_cv.update_traces(texttemplate="%{text:.2f}%", textposition="outside")
-fig_cv.update_layout(
-    yaxis_range=[0, 100],
-    yaxis_title="Macro F1 (%)",
-    plot_bgcolor="#fffdf4",
-    paper_bgcolor="#fffdf4",
-)
-apply_black_plotly_text(fig_cv)
-st.plotly_chart(fig_cv, use_container_width=True)
 
 st.markdown("### Dataset Information")
 d1, d2, d3 = st.columns(3)
