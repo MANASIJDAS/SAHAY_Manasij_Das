@@ -665,13 +665,19 @@ with st.sidebar:
         """
     )
     st.markdown("### Prediction Model")
-    selected_model_name = st.selectbox(
+    default_model_index = (
+        MODEL_DISPLAY_ORDER.index(best_model_name)
+        if best_model_name in MODEL_DISPLAY_ORDER
+        else 0
+    )
+    selected_model_name = st.radio(
         "Choose the model for individual prediction",
         options=MODEL_DISPLAY_ORDER,
-        index=MODEL_DISPLAY_ORDER.index(best_model_name),
+        index=default_model_index,
         key="prediction_model_selector",
+        horizontal=True,
     )
-    model = results[selected_model_name]["estimator"]
+    selected_model = results[selected_model_name]["estimator"]
 
 st.markdown("## Wellbeing Assessment")
 st.markdown("Enter the individual's responses to the 14 grouped assessment dimensions.")
@@ -703,8 +709,9 @@ st.markdown("---")
 if st.button("🔍 Assess Stress Risk", use_container_width=True, type="primary"):
     input_df = pd.DataFrame([user_values], columns=feature_names)
 
-    prediction = model.predict(input_df)[0]
-    probability_dict = get_model_probabilities(model, input_df)
+    prediction_model = selected_model
+    prediction = prediction_model.predict(input_df)[0]
+    probability_dict = get_model_probabilities(prediction_model, input_df)
     classes = list(probability_dict.keys())
     probabilities = [probability_dict[x] for x in classes]
 
