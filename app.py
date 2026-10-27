@@ -9,11 +9,7 @@ import plotly.graph_objects as go
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LogisticRegression
-from sklearn.model_selection import (
-    train_test_split,
-    StratifiedKFold,
-    GridSearchCV,
-)
+from sklearn.model_selection import train_test_split, StratifiedKFold
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
@@ -375,120 +371,87 @@ def train_model():
     labels = ["Normal", "Mild", "Moderate", "Severe", "Extremely Severe"]
 
     model_specs = {
-        "Random Forest": (
-            Pipeline(
-                [
-                    ("imputer", SimpleImputer(strategy="median")),
-                    (
-                        "classifier",
-                        RandomForestClassifier(
-                            random_state=42,
-                            class_weight="balanced",
-                            n_jobs=1,
-                        ),
+        "Random Forest": Pipeline(
+            [
+                ("imputer", SimpleImputer(strategy="median")),
+                (
+                    "classifier",
+                    RandomForestClassifier(
+                        n_estimators=50,
+                        max_depth=10,
+                        min_samples_split=2,
+                        min_samples_leaf=1,
+                        class_weight="balanced",
+                        random_state=42,
+                        n_jobs=1,
                     ),
-                ]
-            ),
-            {
-                "classifier__n_estimators": [50, 100],
-                "classifier__max_depth": [10, None],
-                "classifier__min_samples_split": [2, 5],
-                "classifier__min_samples_leaf": [1, 2],
-                "classifier__class_weight": ["balanced"],
-            },
+                ),
+            ]
         ),
-        "Logistic Regression": (
-            Pipeline(
-                [
-                    ("imputer", SimpleImputer(strategy="median")),
-                    ("scaler", StandardScaler()),
-                    (
-                        "classifier",
-                        LogisticRegression(
-                            solver="lbfgs",
-                            max_iter=500,
-                            random_state=42,
-                        ),
+        "Logistic Regression": Pipeline(
+            [
+                ("imputer", SimpleImputer(strategy="median")),
+                ("scaler", StandardScaler()),
+                (
+                    "classifier",
+                    LogisticRegression(
+                        C=1.0,
+                        solver="lbfgs",
+                        max_iter=200,
+                        class_weight="balanced",
+                        random_state=42,
                     ),
-                ]
-            ),
-            {
-                "classifier__C": [0.1, 1, 10],
-                "classifier__solver": ["lbfgs"],
-                "classifier__max_iter": [500],
-                "classifier__class_weight": ["balanced"],
-            },
+                ),
+            ]
         ),
-        "KNN": (
-            Pipeline(
-                [
-                    ("imputer", SimpleImputer(strategy="median")),
-                    ("scaler", StandardScaler()),
-                    (
-                        "classifier",
-                        KNeighborsClassifier(
-                            algorithm="auto",
-                            n_jobs=1,
-                        ),
+        "KNN": Pipeline(
+            [
+                ("imputer", SimpleImputer(strategy="median")),
+                ("scaler", StandardScaler()),
+                (
+                    "classifier",
+                    KNeighborsClassifier(
+                        n_neighbors=5,
+                        weights="uniform",
+                        metric="minkowski",
+                        p=2,
+                        n_jobs=1,
                     ),
-                ]
-            ),
-            {
-                "classifier__n_neighbors": [3, 5, 7],
-                "classifier__weights": ["uniform", "distance"],
-                "classifier__metric": ["minkowski"],
-                "classifier__p": [1, 2],
-                "classifier__algorithm": ["auto"],
-            },
+                ),
+            ]
         ),
-        "SVM": (
-            Pipeline(
-                [
-                    ("imputer", SimpleImputer(strategy="median")),
-                    ("scaler", StandardScaler()),
-                    (
-                        "classifier",
-                        SVC(
-                            probability=False,
-                            random_state=42,
-                            class_weight="balanced",
-                        ),
+        "SVM": Pipeline(
+            [
+                ("imputer", SimpleImputer(strategy="median")),
+                ("scaler", StandardScaler()),
+                (
+                    "classifier",
+                    SVC(
+                        C=1.0,
+                        kernel="linear",
+                        class_weight="balanced",
+                        probability=False,
+                        random_state=42,
                     ),
-                ]
-            ),
-            {
-                "classifier__C": [0.1, 1, 10],
-                "classifier__kernel": ["linear", "rbf"],
-                "classifier__gamma": ["scale"],
-                "classifier__class_weight": ["balanced"],
-            },
+                ),
+            ]
         ),
     }
 
     results = {}
 
-    for model_name, (pipeline, param_grid) in model_specs.items():
-        grid = GridSearchCV(
-            pipeline,
-            param_grid,
-            cv=cv,
-            scoring="f1_macro",
-            n_jobs=1,
-            pre_dispatch=1,
-        )
-        grid.fit(X_train, y_train)
-
-        best_estimator = grid.best_estimator_
-        y_pred = best_estimator.predict(X_test)
+    for model_name, pipeline in model_specs.items():
+        pipeline.fit(X_train, y_train)
+        y_pred = pipeline.predict(X_test)
 
         accuracy = accuracy_score(y_test, y_pred)
         precision = precision_score(y_test, y_pred, average="macro", zero_division=0)
         recall = recall_score(y_test, y_pred, average="macro", zero_division=0)
-        f1 = f1_score(y_test, y_pred, average="macro", zero_division=0)
+        f1_value = f1_score(y_test, y_pred, average="macro", zero_division=0)
         weighted_f1 = f1_score(y_test, y_pred, average="weighted", zero_division=0)
         cm = confusion_matrix(y_test, y_pred, labels=labels)
 
-        classifier = best_estimator.named_steps["classifier"]
+        classifier = pipeline.named_steps["classifier"]
         if hasattr(classifier, "feature_importances_"):
             importance_values = classifier.feature_importances_
         elif hasattr(classifier, "coef_"):
@@ -500,29 +463,30 @@ def train_model():
             {"Feature": X.columns, "Importance": importance_values}
         ).sort_values("Importance", ascending=True)
 
-        cv_scores = np.array(
-            [
-                grid.cv_results_[f"split{i}_test_score"][grid.best_index_]
-                for i in range(cv.n_splits)
-            ]
-        )
+        cv_scores = []
+        for train_idx, valid_idx in cv.split(X_train, y_train):
+            fold_model = Pipeline(steps=list(pipeline.steps))
+            fold_model.fit(X_train.iloc[train_idx], y_train.iloc[train_idx])
+            valid_pred = fold_model.predict(X_train.iloc[valid_idx])
+            cv_scores.append(
+                f1_score(y_train.iloc[valid_idx], valid_pred, average="macro", zero_division=0)
+            )
 
         results[model_name] = {
-            "estimator": best_estimator,
-            "best_params": grid.best_params_,
-            "best_score": grid.best_score_,
-            "cv_scores": cv_scores,
+            "estimator": pipeline,
+            "best_params": pipeline.get_params(),
+            "cv_scores": np.array(cv_scores),
             "accuracy": accuracy,
             "precision": precision,
             "recall": recall,
-            "f1": f1,
+            "f1": f1_value,
             "weighted_f1": weighted_f1,
             "confusion_matrix": cm,
             "importance_df": importance_df,
             "y_pred": y_pred,
         }
 
-    best_model_name, best_result = max(results.items(), key=lambda item: item[1]["best_score"])
+    best_model_name, best_result = max(results.items(), key=lambda item: item[1]["f1"])
 
     model = best_result["estimator"]
     accuracy = best_result["accuracy"]
@@ -535,9 +499,7 @@ def train_model():
     importance_df = best_result["importance_df"]
     best_params = best_result["best_params"]
 
-    distribution = (
-        y.value_counts().reindex(labels, fill_value=0).reset_index()
-    )
+    distribution = y.value_counts().reindex(labels, fill_value=0).reset_index()
     distribution.columns = ["Stress Level", "Count"]
 
     return (
@@ -631,7 +593,7 @@ st.markdown(
     </p>
 
     <p>
-    DASS-42 based stress screening and welfare-support prototype
+    DASS-42 based stress-category classification prototype
     powered by the best-performing trained model.
     </p>
 
@@ -871,7 +833,7 @@ st.caption(
     "Performance metrics are calculated on the held-out test set. "
     "Three-fold cross-validation is used during model selection."
 )
-st.caption(f"Best model selected by 5-fold cross-validation macro F1: {best_model_name}")
+st.caption(f"Best model selected by macro F1 on the held-out test set: {best_model_name}")
 
 m1, m2, m3, m4, m5 = st.columns(5)
 
